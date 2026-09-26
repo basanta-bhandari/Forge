@@ -41,12 +41,12 @@ impl Projector {
         let pitch = scene.camera.pitch.to_radians();
         let offset = Vec3::new(
             yaw.sin() * pitch.cos(),
-            pitch.sin(),
             yaw.cos() * pitch.cos(),
+            pitch.sin(),
         ) * scene.camera.distance;
         let position = scene.camera.target + offset;
         let forward = (scene.camera.target - position).normalized();
-        let right = Vec3::new(0.0, 1.0, 0.0).cross(forward).normalized();
+        let right = Vec3::new(0.0, 0.0, 1.0).cross(forward).normalized();
         let up = forward.cross(right).normalized();
         Self {
             position,
@@ -72,7 +72,7 @@ impl Projector {
         let divisor = if self.perspective {
             self.focus * 0.55 + z * 0.45
         } else {
-            8.0
+            self.focus.max(1.0)
         };
         Some(Point {
             x: self.width as f32 * 0.5 + x / divisor * scale,
@@ -294,11 +294,11 @@ fn draw_line(
 }
 
 fn draw_grid(projector: &Projector, pixels: &mut [[u8; 3]], depth: &mut [f32], color: [u8; 3]) {
-    for coordinate in -10..=10 {
-        let c = coordinate as f32;
+    for coordinate in -11..=11 {
+        let c = coordinate as f32 * 10.0;
         for (a, b) in [
-            (Vec3::new(c, 0.0, -10.0), Vec3::new(c, 0.0, 10.0)),
-            (Vec3::new(-10.0, 0.0, c), Vec3::new(10.0, 0.0, c)),
+            (Vec3::new(c, -110.0, 0.0), Vec3::new(c, 110.0, 0.0)),
+            (Vec3::new(-110.0, c, 0.0), Vec3::new(110.0, c, 0.0)),
         ] {
             if let (Some(a), Some(b)) = (projector.project(a), projector.project(b)) {
                 draw_line(

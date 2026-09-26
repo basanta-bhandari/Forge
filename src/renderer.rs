@@ -110,12 +110,12 @@ impl Projector {
         let pitch = scene.camera.pitch.to_radians();
         let offset = Vec3::new(
             yaw.sin() * pitch.cos(),
-            pitch.sin(),
             yaw.cos() * pitch.cos(),
+            pitch.sin(),
         ) * scene.camera.distance;
         let position = scene.camera.target + offset;
         let forward = (scene.camera.target - position).normalized();
-        let right = Vec3::new(0.0, 1.0, 0.0).cross(forward).normalized();
+        let right = Vec3::new(0.0, 0.0, 1.0).cross(forward).normalized();
         let up = forward.cross(right).normalized();
         Self {
             position,
@@ -145,7 +145,7 @@ impl Projector {
                 self.height as f32 * 0.5 - y / gentle_depth * focal * 0.5,
             )
         } else {
-            let scale = self.height as f32 / 8.0;
+            let scale = self.height as f32 / self.focus_distance.max(1.0);
             (
                 self.width as f32 * 0.5 + x * scale,
                 self.height as f32 * 0.5 - y * scale * 0.5,
@@ -317,24 +317,24 @@ fn draw_line(
 }
 
 fn render_grid(buffer: &mut FrameBuffer, projector: &Projector) {
-    for coordinate in -10..=10 {
-        let c = coordinate as f32;
+    for coordinate in -11..=11 {
+        let c = coordinate as f32 * 10.0;
         if let (Some(a), Some(b)) = (
-            projector.project(Vec3::new(c, 0.0, -10.0)),
-            projector.project(Vec3::new(c, 0.0, 10.0)),
+            projector.project(Vec3::new(c, -110.0, 0.0)),
+            projector.project(Vec3::new(c, 110.0, 0.0)),
         ) {
             draw_line(
                 buffer,
                 a,
                 b,
-                if coordinate == 0 { 'z' } else { '.' },
+                if coordinate == 0 { 'y' } else { '.' },
                 true,
                 None,
             );
         }
         if let (Some(a), Some(b)) = (
-            projector.project(Vec3::new(-10.0, 0.0, c)),
-            projector.project(Vec3::new(10.0, 0.0, c)),
+            projector.project(Vec3::new(-110.0, c, 0.0)),
+            projector.project(Vec3::new(110.0, c, 0.0)),
         ) {
             draw_line(
                 buffer,
@@ -348,9 +348,9 @@ fn render_grid(buffer: &mut FrameBuffer, projector: &Projector) {
     }
     if let (Some(a), Some(b)) = (
         projector.project(Vec3::ZERO),
-        projector.project(Vec3::new(0.0, 2.0, 0.0)),
+        projector.project(Vec3::new(0.0, 0.0, 20.0)),
     ) {
-        draw_line(buffer, a, b, 'y', true, None);
+        draw_line(buffer, a, b, 'z', true, None);
     }
 }
 

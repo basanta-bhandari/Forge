@@ -86,8 +86,10 @@ pub fn kitty_image(
         let more = usize::from((index + 1) * 4096 < encoded.len());
         if index == 0 {
             output.extend_from_slice(
-                format!("\x1b_Ga=T,f=100,c={columns},r={rows},i={image_id},p=1,q=2,C=1,m={more};")
-                    .as_bytes(),
+                format!(
+                    "\x1b_Ga=T,f=100,c={columns},r={rows},i={image_id},p=1,z=-1,q=2,C=1,m={more};"
+                )
+                .as_bytes(),
             );
         } else {
             output.extend_from_slice(format!("\x1b_Gm={more};").as_bytes());

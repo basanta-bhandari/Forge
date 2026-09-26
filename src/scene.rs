@@ -68,9 +68,9 @@ pub struct Object {
 }
 
 impl Object {
-    pub fn world_dimensions(&self) -> Vec3 {
+    pub fn world_bounds(&self) -> Option<(Vec3, Vec3)> {
         if self.mesh.vertices.is_empty() {
-            return Vec3::ZERO;
+            return None;
         }
         let mut min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
         let mut max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
@@ -83,7 +83,12 @@ impl Object {
             max.y = max.y.max(point.y);
             max.z = max.z.max(point.z);
         }
-        max - min
+        Some((min, max))
+    }
+
+    pub fn world_dimensions(&self) -> Vec3 {
+        self.world_bounds()
+            .map_or(Vec3::ZERO, |(min, max)| max - min)
     }
 }
 
@@ -118,8 +123,8 @@ impl Default for Camera {
         Self {
             yaw: -35.0,
             pitch: 24.0,
-            distance: 8.0,
-            target: Vec3::ZERO,
+            distance: 120.0,
+            target: Vec3::new(0.0, 0.0, 10.0),
             perspective: true,
         }
     }
@@ -132,12 +137,24 @@ pub struct Scene {
     pub selected: usize,
     pub camera: Camera,
     pub shading: ShadingMode,
+    #[serde(default = "default_units")]
+    pub units: String,
+    #[serde(default = "default_build_volume")]
+    pub build_volume: Vec3,
     #[serde(default = "default_next_id")]
     next_id: u64,
 }
 
 fn default_next_id() -> u64 {
     1
+}
+
+fn default_units() -> String {
+    "mm".into()
+}
+
+fn default_build_volume() -> Vec3 {
+    Vec3::new(220.0, 220.0, 250.0)
 }
 
 impl Default for Scene {
@@ -148,6 +165,8 @@ impl Default for Scene {
             selected: 0,
             camera: Camera::default(),
             shading: ShadingMode::Solid,
+            units: default_units(),
+            build_volume: default_build_volume(),
             next_id: 1,
         };
         scene.add_primitive(PrimitiveKind::Cube);
@@ -158,13 +177,30 @@ impl Default for Scene {
 impl Scene {
     pub fn add_primitive(&mut self, kind: PrimitiveKind) {
         let ordinal = self.objects.iter().filter(|o| o.kind == kind).count() + 1;
+        let mesh = primitive_mesh(kind);
+        let minimum_z = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.z)
+            .fold(f32::INFINITY, f32::min);
         let object = Object {
             id: self.next_id,
             name: format!("{} {ordinal}", kind.label()),
             kind,
-            transform: Transform::default(),
+            transform: Transform {
+                position: Vec3::new(
+                    0.0,
+                    0.0,
+                    if minimum_z.is_finite() {
+                        -minimum_z
+                    } else {
+                        0.0
+                    },
+                ),
+                ..Transform::default()
+            },
             visible: true,
-            mesh: primitive_mesh(kind),
+            mesh,
         };
         self.next_id += 1;
         self.objects.push(object);
@@ -191,7 +227,7 @@ impl Scene {
         duplicate.id = self.next_id;
         self.next_id += 1;
         duplicate.name = format!("{} Copy", duplicate.name);
-        duplicate.transform.position.x += 0.5;
+        duplicate.transform.position.x += 5.0;
         self.objects.push(duplicate);
         self.selected = self.objects.len() - 1;
         true
@@ -251,7 +287,7 @@ impl Scene {
 }
 
 pub fn primitive_mesh(kind: PrimitiveKind) -> Mesh {
-    match kind {
+    let mut mesh = match kind {
         PrimitiveKind::Cube => cube(),
         PrimitiveKind::Sphere => sphere(16, 8),
         PrimitiveKind::Cylinder => cylinder(18),
@@ -263,7 +299,13 @@ pub fn primitive_mesh(kind: PrimitiveKind) -> Mesh {
             vertices: Vec::new(),
             triangles: Vec::new(),
         },
+    };
+    if kind != PrimitiveKind::Plane {
+        for vertex in &mut mesh.vertices {
+            *vertex = *vertex * 10.0;
+        }
     }
+    mesh
 }
 
 fn cube() -> Mesh {
@@ -300,43 +342,49 @@ fn cube() -> Mesh {
 fn plane() -> Mesh {
     Mesh {
         vertices: vec![
-            Vec3::new(-5.0, 0.0, -5.0),
-            Vec3::new(5.0, 0.0, -5.0),
-            Vec3::new(5.0, 0.0, 5.0),
-            Vec3::new(-5.0, 0.0, 5.0),
+            Vec3::new(-110.0, -110.0, 0.0),
+            Vec3::new(110.0, -110.0, 0.0),
+            Vec3::new(110.0, 110.0, 0.0),
+            Vec3::new(-110.0, 110.0, 0.0),
         ],
         triangles: vec![[0, 2, 1], [0, 3, 2]],
     }
 }
 
 fn sphere(segments: usize, rings: usize) -> Mesh {
-    let mut vertices = Vec::new();
-    for ring in 0..=rings {
+    let mut vertices = vec![Vec3::new(0.0, 0.0, 1.0)];
+    for ring in 1..rings {
         let phi = std::f32::consts::PI * ring as f32 / rings as f32;
         for segment in 0..segments {
             let theta = std::f32::consts::TAU * segment as f32 / segments as f32;
             vertices.push(Vec3::new(
                 phi.sin() * theta.cos(),
-                phi.cos(),
                 phi.sin() * theta.sin(),
+                phi.cos(),
             ));
         }
     }
+    let bottom = vertices.len();
+    vertices.push(Vec3::new(0.0, 0.0, -1.0));
     let mut triangles = Vec::new();
-    for ring in 0..rings {
+    for segment in 0..segments {
+        let next = (segment + 1) % segments;
+        triangles.push([0, 1 + segment, 1 + next]);
+    }
+    for ring in 0..rings - 2 {
         for segment in 0..segments {
             let next = (segment + 1) % segments;
-            let a = ring * segments + segment;
-            let b = ring * segments + next;
-            let c = (ring + 1) * segments + segment;
-            let d = (ring + 1) * segments + next;
-            if ring > 0 {
-                triangles.push([a, c, b]);
-            }
-            if ring + 1 < rings {
-                triangles.push([b, c, d]);
-            }
+            let a = 1 + ring * segments + segment;
+            let b = 1 + ring * segments + next;
+            let c = 1 + (ring + 1) * segments + segment;
+            let d = 1 + (ring + 1) * segments + next;
+            triangles.extend([[a, c, b], [b, c, d]]);
         }
+    }
+    let last_ring = 1 + (rings - 2) * segments;
+    for segment in 0..segments {
+        let next = (segment + 1) % segments;
+        triangles.push([bottom, last_ring + next, last_ring + segment]);
     }
     Mesh {
         vertices,
@@ -345,11 +393,11 @@ fn sphere(segments: usize, rings: usize) -> Mesh {
 }
 
 fn cylinder(segments: usize) -> Mesh {
-    let mut vertices = vec![Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0)];
-    for y in [-1.0, 1.0] {
+    let mut vertices = vec![Vec3::new(0.0, 0.0, -1.0), Vec3::new(0.0, 0.0, 1.0)];
+    for z in [-1.0, 1.0] {
         for i in 0..segments {
             let angle = std::f32::consts::TAU * i as f32 / segments as f32;
-            vertices.push(Vec3::new(angle.cos(), y, angle.sin()));
+            vertices.push(Vec3::new(angle.cos(), angle.sin(), z));
         }
     }
     let mut triangles = Vec::new();
@@ -373,10 +421,10 @@ fn cylinder(segments: usize) -> Mesh {
 }
 
 fn cone(segments: usize) -> Mesh {
-    let mut vertices = vec![Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0)];
+    let mut vertices = vec![Vec3::new(0.0, 0.0, -1.0), Vec3::new(0.0, 0.0, 1.0)];
     for i in 0..segments {
         let angle = std::f32::consts::TAU * i as f32 / segments as f32;
-        vertices.push(Vec3::new(angle.cos(), -1.0, angle.sin()));
+        vertices.push(Vec3::new(angle.cos(), angle.sin(), -1.0));
     }
     let mut triangles = Vec::new();
     for i in 0..segments {
@@ -399,8 +447,8 @@ fn torus(major_segments: usize, minor_segments: usize) -> Mesh {
             let radius = 1.25 + 0.38 * v.cos();
             vertices.push(Vec3::new(
                 radius * u.cos(),
-                0.38 * v.sin(),
                 radius * u.sin(),
+                0.38 * v.sin(),
             ));
         }
     }
@@ -427,8 +475,8 @@ fn wedge() -> Mesh {
         vertices: vec![
             Vec3::new(-1.0, -1.0, -1.0),
             Vec3::new(1.0, -1.0, -1.0),
-            Vec3::new(-1.0, -1.0, 1.0),
-            Vec3::new(1.0, -1.0, 1.0),
+            Vec3::new(-1.0, 1.0, -1.0),
+            Vec3::new(1.0, 1.0, -1.0),
             Vec3::new(-1.0, 1.0, 1.0),
             Vec3::new(1.0, 1.0, 1.0),
         ],
@@ -484,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn construction_plane_is_ten_units_square() {
+    fn construction_plane_matches_default_bed_width() {
         let mesh = primitive_mesh(PrimitiveKind::Plane);
         let width = mesh
             .vertices
@@ -496,7 +544,7 @@ mod tests {
                 .iter()
                 .map(|v| v.x)
                 .fold(f32::INFINITY, f32::min);
-        assert_eq!(width, 10.0);
+        assert_eq!(width, 220.0);
     }
 
     #[test]
@@ -505,6 +553,6 @@ mod tests {
         let original_id = scene.objects[0].id;
         assert!(scene.duplicate_selected());
         assert_ne!(scene.objects[1].id, original_id);
-        assert_eq!(scene.objects[1].transform.position.x, 0.5);
+        assert_eq!(scene.objects[1].transform.position.x, 5.0);
     }
 }

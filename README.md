@@ -1,90 +1,92 @@
 # ForgeTUI
 
-ForgeTUI is a keyboard-first 3D modeller with a real-pixel terminal viewport. It uses Kitty graphics or Sixel when available and keeps ASCII as a portable fallback, while the surrounding panels remain a fast native TUI.
+ForgeTUI is a lightweight terminal CAD tool focused on preparing solid models for 3D printing. It works in millimetres, uses a Z-up build plate, and renders a real anti-aliased RGB viewport through Kitty graphics or Sixel. The surrounding interface remains a low-power, mouse-enabled TUI.
 
-![Status: prototype](https://img.shields.io/badge/status-functional_prototype-37b7b5)
+> Status: functional prototype. ForgeTUI is a mesh modeller, not yet a parametric sketch/B-Rep replacement for production CAD.
 
 ## Build and run
 
 Requires Rust 1.88 or newer.
 
 ```bash
-cargo run --release -- --demo
+cargo build --release --locked
+./target/release/forgetui
 ```
 
-Graphics are auto-detected. Press `v` to cycle modes, use `:graphics kitty`, `:graphics sixel`, or `:graphics ascii`, or set `FORGETUI_GRAPHICS=kitty` before launching.
-
-Other useful invocations:
+Open an existing printable model or the demo:
 
 ```bash
-cargo run -- --help
-cargo run -- --render model.forge
-cargo run -- model.obj
-cargo test
+./target/release/forgetui bracket.3mf
+./target/release/forgetui part.stl
+./target/release/forgetui --demo
 ```
 
-Inside the app, press `?` for the complete key and command reference. The fastest workflow is `a` to add a primitive and `:` to enter precise commands such as:
+Graphics are detected automatically. In Kitty, use `:graphics kitty` if detection is unavailable. Sixel and a plain TTY fallback are also supported; the main experience is the pixel viewport.
+
+## Print workflow
+
+Press `a` to add a solid, click or right-click it to work with it, and use plain commands for exact operations:
 
 ```text
-move x 2.5
-rotate y 45
-scale z 0.5
-rename Bracket
-save bracket.forge
-export bracket.stl
+size 20 30 5        exact X/Y/Z dimensions in mm
+size z 12           exact height
+move x 10
+place               put the object on the bed
+center              centre it and put it on the bed
+check                validate printable geometry
+repair               weld duplicates and remove bad triangles
+bed 220 220 250      set printer build volume
+export bracket.3mf
+slice                export 3MF and launch an installed slicer
 ```
+
+The **Print** menu exposes the same actions without memorising commands. Slicer handoff detects OrcaSlicer, PrusaSlicer, Bambu Studio, or Cura on `PATH`.
+
+Saving uses an in-app **Save As** window: browse folders, edit the name, choose `.forge`, `.3mf`, `.stl`, or `.step`, then click Save. Existing files require a second confirmation. `Ctrl-S` saves the current project, `Ctrl-Shift-S` opens Save As, and `E` opens the same window with 3MF selected for quick print export.
+
+Mouse tools directly manipulate the selected object. A click only selects; it does not open a command prompt. With Move selected, left-drag moves in the visible screen plane and right-drag changes Z height. Rotate uses left-drag for X/Z and right-drag for Y/Z. Scale uses left-drag uniformly and right-drag for Z only. A right-click without movement still opens the object menu, while right- or middle-drag pans when the Select tool is active.
 
 ## File formats
 
-| Ecosystem | Format in ForgeTUI | Status |
-|---|---|---|
-| ForgeTUI | `.forge` | Native editable JSON; always available |
-| Fusion 360 | `.f3d` / STEP | `.f3d` is proprietary; exchange through `.step` |
-| Onshape | STEP | Onshape is cloud-native and has no local native document file; `.step` import/export uses `FreeCADCmd` |
-| Blender | `.blend` | Import/export uses the `blender` command-line application |
-| General mesh | `.obj`, `.stl` | Built in; no external applications required |
+| Format | Support |
+|---|---|
+| `.forge` | Native editable project |
+| `.stl` | Built-in binary/ASCII import and binary export |
+| `.3mf` | Built-in import/export in millimetres |
+| `.step` / `.stp` | Optional import/export through `FreeCADCmd` |
 
-ForgeTUI refuses to create fake `.f3d` or `.blend` files. When the official/native format writer is unavailable it gives an actionable conversion message. This keeps exported work trustworthy.
+The former Fusion 360, Onshape, Blender, OBJ, and general-renderer ambitions are intentionally outside the product scope.
 
-## Current scope
+## Current features
 
-- Anti-aliased RGB software renderer with lighting and solid, wireframe, and X-ray modes
-- Kitty and Sixel terminal image protocols with automatic detection and ASCII fallback
-- Perspective and orthographic cameras, orbit, zoom, and frame-selection
-- Cube, sphere, cylinder, cone, torus, wedge, and a larger 10×10 plane
-- Mouse selection, left-drag orbit, right/middle-drag pan, and wheel zoom
-- Five themes: Midnight, Amber, Matrix, Light, and Mono (`t` cycles them)
-- Grid snapping, keyboard nudging, duplicate, mirror, reset, dimensions, and standard CAD views
-- Event-driven redraws for near-zero idle CPU use
-- Exact move, rotate, scale, visibility, rename, delete, selection, undo, and redo
-- Native project round trips and built-in OBJ/STL interchange
-- Optional Blender and FreeCAD conversion adapters
-- Headless `--render` mode for scripts and snapshots
-
-This is a mesh modeller rather than a production parametric/constraint CAD kernel. Sketch constraints, booleans, B-Rep/NURBS editing, materials, animation, and GPU rendering are logical next stages.
+- 220 × 220 × 250 mm default build volume and 10 mm bed grid
+- Cube, sphere, cylinder, cone, torus, wedge, and construction plane
+- Exact dimensions, move/rotate/scale, duplicate, mirror, snap, and undo/redo
+- Watertightness, degenerate-face, non-manifold-edge, bed-fit, bounds, volume, and overhang checks
+- Basic mesh repair, centre-on-bed, and place-on-bed tools
+- Click selection, orbit, pan, zoom, right-click actions, side toolbar, and top menus
+- Solid, wireframe, and X-ray views; perspective/orthographic cameras
+- Kitty/Sixel RGB output with lighting and anti-aliasing
+- Five themes and event-driven redraws for low idle CPU use
 
 ## Controls
 
-| Key | Action |
+| Input | Action |
 |---|---|
-| `h/l`, arrows | Orbit camera |
-| `+/-` | Zoom |
-| `j/k` | Select next/previous object |
-| `a` | Add menu |
-| `g`, `r`, `s` | Guided move, rotate, scale commands |
-| `d` | Duplicate selection |
-| `1`, `3`, `7`, `0` | Front, side, top, isometric views |
-| `5` | Toggle perspective |
-| `t` | Cycle themes |
-| `v` | Cycle Auto/Kitty/Sixel/ASCII graphics |
-| `Delete` | Remove selection |
-| `Space` | Cycle shading mode |
-| `p` | Toggle perspective |
-| `f` | Frame selection |
-| `u`, `Ctrl-r` | Undo, redo |
-| `Ctrl-s` | Save native project |
-| `:` | Command prompt |
-| `?` | Help |
+| Select tool: left-drag / right- or middle-drag | Orbit / pan |
+| Move tool: left-drag / right-drag | Screen-plane move / Z move |
+| Rotate tool: left-drag / right-drag | X/Z rotate / Y/Z rotate |
+| Scale tool: left-drag / right-drag | Uniform scale / Z scale |
+| Right-click without dragging | Object actions |
+| Wheel | Zoom |
+| `a`, `g`, `r`, `s` | Add, move, rotate, scale |
+| `e`, `o` | Export, open |
+| `Ctrl-S`, `Ctrl-Shift-S` | Save, Save As |
+| `1`, `3`, `7`, `0` | Front, side, top, isometric |
+| `5` | Perspective/orthographic |
+| `t`, `v` | Cycle theme, graphics mode |
+| `:` | Enter a command |
+| `?` | Built-in help |
 | `q` | Quit |
 
-Mouse controls are intentionally conventional: click to select, left-drag the viewport to orbit, right/middle-drag to pan, and use the wheel to zoom. Try `theme amber`, `snap .25`, `mirror x`, or `view top` in the command prompt.
+Use `./target/release/forgetui --formats` for the format summary and `--render FILE` for a headless terminal preview.
