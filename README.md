@@ -38,11 +38,7 @@ forgetui --demo
 
 For downloadable binaries, attach builds to a GitHub Release and share the release URL.
 
-## Publish
 
-Install and authenticate the [GitHub CLI](https://cli.github.com/), then run:
-
-```bash
 ./publish.sh
 ```
 
