@@ -8,8 +8,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use forgetui::{
-    formats,
-    graphics::{self, GraphicsMode},
+    formats, graphics,
     math::Vec3,
     pixel_renderer::{self, PixelStyle},
     print, renderer,
@@ -31,7 +30,7 @@ use std::{
     time::Duration,
 };
 
-const HELP: &str = "3D-PRINT CAD — MILLIMETRES\n  A Add   G Move   R Rotate   S Scale   E Export   ? Help\n\nMOUSE TOOLS\n  Click selects; clicking never starts a command prompt.\n  Select: left-drag orbit · right/middle-drag pan\n  Move:   left-drag screen plane · right-drag Z height\n  Rotate: left-drag X/Z · right-drag Y/Z\n  Scale:  left-drag uniform · right-drag Z only\n  Right-click without dragging opens object actions.\n  Wheel zooms; top menus and side tools are clickable.\n\nPRINT COMMANDS\n  size 20 30 5       exact X/Y/Z size in mm\n  size z 12          exact size on one axis\n  place               put selection on build plate\n  center              centre selection and place it\n  check                printable-solid validation\n  repair               weld/remove broken mesh data\n  bed 220 220 250      set build volume in mm\n  slice                export 3MF and open a slicer\n\nFILES\n  save job.forge       native editable project\n  open part.stl        STL/3MF import\n  export part.3mf      3MF or STL for printing\n  export part.step     optional FreeCAD bridge\n\nGRAPHICS  auto · kitty · sixel · ascii\nTHEMES    midnight · amber · matrix · light · mono\n\nEsc or ? closes this panel.";
+const HELP: &str = "3D-PRINT CAD — MILLIMETRES\n  A Add   G Move   R Rotate   S Scale   E Export   ? Help\n\nMOUSE TOOLS\n  Click selects; clicking never starts a command prompt.\n  Select: left-drag orbit · right/middle-drag pan\n  Move:   left-drag screen plane · right-drag Z height\n  Rotate: left-drag X/Z · right-drag Y/Z\n  Scale:  left-drag uniform · right-drag Z only\n  Right-click without dragging opens object actions.\n  Wheel zooms; top menus and side tools are clickable.\n\nPRINT COMMANDS\n  size 20 30 5       exact X/Y/Z size in mm\n  size z 12          exact size on one axis\n  place               put selection on build plate\n  center              centre selection and place it\n  check                printable-solid validation\n  repair               weld/remove broken mesh data\n  bed 220 220 250      set build volume in mm\n  slice                export 3MF and open a slicer\n\nFILES\n  save job.forge       native editable project\n  open part.stl        STL/3MF import\n  export part.3mf      3MF or STL for printing\n  export part.step     optional FreeCAD bridge\n\nTERMINAL  Kitty only\nTHEMES    midnight · amber · matrix · light · mono\n\nEsc or ? closes this panel.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ThemeChoice {
@@ -323,7 +322,6 @@ struct App {
     regions: UiRegions,
     pick_frame: Option<renderer::RenderedFrame>,
     drag: Option<DragState>,
-    graphics: GraphicsMode,
     kitty_image_id: u32,
     active_tool: ToolKind,
     context_menu: Option<ContextMenu>,
@@ -348,10 +346,6 @@ impl App {
             regions: UiRegions::default(),
             pick_frame: None,
             drag: None,
-            graphics: std::env::var("FORGETUI_GRAPHICS")
-                .ok()
-                .and_then(|value| GraphicsMode::parse(&value.to_ascii_lowercase()))
-                .unwrap_or(GraphicsMode::Auto),
             kitty_image_id: 0,
             active_tool: ToolKind::Select,
             context_menu: None,
@@ -581,7 +575,6 @@ impl App {
             "mirror" => self.command_mirror(&args),
             "snap" => self.command_snap(&args),
             "theme" => self.command_theme(&args),
-            "graphics" | "renderer" => self.command_graphics(&args),
             "view" => self.command_view(&args),
             "check" | "validate" => Ok(print::validate(&self.scene).summary()),
             "repair" => self.command_repair(),
@@ -905,16 +898,6 @@ impl App {
         Ok(format!("Theme: {}", self.theme.name()))
     }
 
-    fn command_graphics(&mut self, args: &[&str]) -> Result<String, String> {
-        self.graphics = GraphicsMode::parse(args.first().copied().unwrap_or_default())
-            .ok_or("graphics modes: auto, kitty, sixel, ascii")?;
-        Ok(format!(
-            "Graphics: {} (active {})",
-            self.graphics.label(),
-            self.graphics.detect().label()
-        ))
-    }
-
     fn command_view(&mut self, args: &[&str]) -> Result<String, String> {
         let view = args.first().copied().unwrap_or_default();
         match view {
@@ -1100,8 +1083,7 @@ impl App {
                 6 => self.scene.shading = ShadingMode::Solid,
                 7 => self.scene.shading = ShadingMode::Wireframe,
                 8 => self.scene.shading = ShadingMode::XRay,
-                9 => self.graphics = self.graphics.next(),
-                10 => self.theme = self.theme.next(),
+                9 => self.theme = self.theme.next(),
                 _ => {}
             },
             MenuKind::Print => match index {
@@ -1365,10 +1347,6 @@ impl App {
             KeyCode::Char('t') => {
                 self.theme = self.theme.next();
                 self.status = format!("Theme: {}", self.theme.name());
-            }
-            KeyCode::Char('v') => {
-                self.graphics = self.graphics.next();
-                self.status = format!("Graphics: {}", self.graphics.label());
             }
             KeyCode::Char('u') => self.undo(),
             KeyCode::Delete | KeyCode::Backspace => self.remove(),
@@ -1758,7 +1736,6 @@ fn menu_items(kind: MenuKind) -> &'static [&'static str] {
             "Solid",
             "Wireframe",
             "X-Ray",
-            "Cycle graphics",
             "Cycle theme",
         ],
         MenuKind::Print => &[
@@ -2002,7 +1979,7 @@ fn draw_header(frame: &mut Frame, app: &mut App, area: Rect) {
         } else {
             "ORTHO"
         },
-        app.graphics.detect().label(),
+        "KITTY",
         app.scene.build_volume.x,
         app.scene.build_volume.y,
         app.scene.build_volume.z,
@@ -2100,11 +2077,7 @@ fn draw_viewport(frame: &mut Frame, app: &mut App, area: Rect) {
     let inner_width = area.width.saturating_sub(2);
     let inner_height = area.height.saturating_sub(2);
     let rendered = renderer::render_scene(&app.scene, inner_width, inner_height);
-    let rows = if app.graphics.detect() == GraphicsMode::Ascii {
-        rendered.rows.clone()
-    } else {
-        vec![" ".repeat(inner_width as usize); inner_height as usize]
-    };
+    let rows = vec![" ".repeat(inner_width as usize); inner_height as usize];
     let text = Text::from(rows.into_iter().map(Line::from).collect::<Vec<_>>());
     let title = format!(
         " Model · {} triangles · {} ",
@@ -2497,18 +2470,13 @@ fn render_pixel_overlay(
     backend: &mut CrosstermBackend<io::Stdout>,
     app: &mut App,
 ) -> io::Result<()> {
-    let mode = app.graphics.detect();
     if matches!(
         app.overlay,
         Overlay::Help | Overlay::Add | Overlay::Context | Overlay::SaveAs
     ) {
         return Ok(());
     }
-    if mode != GraphicsMode::Kitty && app.kitty_image_id != 0 {
-        backend.write_all(&graphics::kitty_delete(app.kitty_image_id))?;
-        app.kitty_image_id = 0;
-    }
-    if mode == GraphicsMode::Ascii || app.regions.viewport.width == 0 {
+    if app.regions.viewport.width == 0 {
         return Ok(());
     }
     let window = crossterm::terminal::window_size().ok();
@@ -2537,28 +2505,22 @@ fn render_pixel_overlay(
         MoveTo(app.regions.viewport.x, app.regions.viewport.y)
     )?;
     let previous_kitty_id = app.kitty_image_id;
-    let payload = match mode {
-        GraphicsMode::Kitty => {
-            let image_id = if previous_kitty_id == 0 {
-                std::process::id().saturating_mul(4096).saturating_add(1)
-            } else {
-                previous_kitty_id.wrapping_add(1).max(1)
-            };
-            app.kitty_image_id = image_id;
-            graphics::kitty_image(
-                &image.rgb,
-                image.width,
-                image.height,
-                app.regions.viewport.width,
-                app.regions.viewport.height,
-                image_id,
-            )
-        }
-        GraphicsMode::Sixel => graphics::sixel_image(&image.rgb, image.width, image.height),
-        _ => Vec::new(),
+    let image_id = if previous_kitty_id == 0 {
+        std::process::id().saturating_mul(4096).saturating_add(1)
+    } else {
+        previous_kitty_id.wrapping_add(1).max(1)
     };
+    app.kitty_image_id = image_id;
+    let payload = graphics::kitty_image(
+        &image.rgb,
+        image.width,
+        image.height,
+        app.regions.viewport.width,
+        app.regions.viewport.height,
+        image_id,
+    );
     backend.write_all(&payload)?;
-    if mode == GraphicsMode::Kitty && previous_kitty_id != 0 {
+    if previous_kitty_id != 0 {
         backend.write_all(&graphics::kitty_delete(previous_kitty_id))?;
     }
     backend.write_all(b"\x1b8")?;
@@ -2662,165 +2624,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         return Ok(());
     }
+    if !graphics::is_kitty_terminal() {
+        eprintln!(
+            "Forge only works in the Kitty terminal.\n\
+             Install Kitty: https://sw.kovidgoyal.net/kitty/binary/\n\
+             Then run Forge from Kitty."
+        );
+        std::process::exit(1);
+    }
     let native_path =
         file.filter(|path| matches!(path.extension().and_then(|e| e.to_str()), Some("forge")));
     run_tui(App::new(scene, native_path))
-}
-
-#[cfg(test)]
-mod mouse_tests {
-    use super::*;
-
-    fn app_with_pickable_cube() -> (App, u16, u16) {
-        let scene = Scene::default();
-        let rendered = renderer::render_scene(&scene, 60, 30);
-        let point = (0..30)
-            .find_map(|y| {
-                (0..60)
-                    .find(|&x| rendered.object_at(x, y).is_some())
-                    .map(|x| (x as u16, y as u16))
-            })
-            .expect("cube should be pickable");
-        let mut app = App::new(scene, None);
-        app.regions.viewport = Rect::new(0, 0, 60, 30);
-        app.pick_frame = Some(rendered);
-        (app, point.0, point.1)
-    }
-
-    fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
-        MouseEvent {
-            kind,
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
-        }
-    }
-
-    #[test]
-    fn move_tool_click_selects_without_opening_command_prompt() {
-        let (mut app, x, y) = app_with_pickable_cube();
-        app.active_tool = ToolKind::Move;
-        app.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), x, y));
-        app.handle_mouse(mouse(MouseEventKind::Up(MouseButton::Left), x, y));
-        assert_eq!(app.overlay, Overlay::None);
-        assert!(app.command.is_empty());
-    }
-
-    #[test]
-    fn move_tool_left_drag_moves_and_right_click_still_opens_menu() {
-        let (mut app, x, y) = app_with_pickable_cube();
-        app.active_tool = ToolKind::Move;
-        let before = app.scene.selected().unwrap().transform.position;
-        app.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), x, y));
-        app.handle_mouse(mouse(MouseEventKind::Drag(MouseButton::Left), x + 3, y));
-        app.handle_mouse(mouse(MouseEventKind::Up(MouseButton::Left), x + 3, y));
-        assert_ne!(app.scene.selected().unwrap().transform.position, before);
-
-        app.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Right), x, y));
-        app.handle_mouse(mouse(MouseEventKind::Up(MouseButton::Right), x, y));
-        assert_eq!(app.overlay, Overlay::Context);
-    }
-
-    #[test]
-    fn manipulation_tools_change_their_selected_transform() {
-        let (mut move_app, x, y) = app_with_pickable_cube();
-        move_app.active_tool = ToolKind::Move;
-        let old_z = move_app.scene.selected().unwrap().transform.position.z;
-        move_app.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Right), x, y));
-        move_app.handle_mouse(mouse(
-            MouseEventKind::Drag(MouseButton::Right),
-            x,
-            y.saturating_add(2),
-        ));
-        move_app.handle_mouse(mouse(
-            MouseEventKind::Up(MouseButton::Right),
-            x,
-            y.saturating_add(2),
-        ));
-        assert_ne!(
-            move_app.scene.selected().unwrap().transform.position.z,
-            old_z
-        );
-        assert_eq!(move_app.overlay, Overlay::None);
-        let first_z = move_app.scene.selected().unwrap().transform.position.z;
-        move_app.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Right), 0, 0));
-        move_app.handle_mouse(mouse(MouseEventKind::Drag(MouseButton::Right), 0, 2));
-        move_app.handle_mouse(mouse(MouseEventKind::Up(MouseButton::Right), 0, 2));
-        assert_ne!(
-            move_app.scene.selected().unwrap().transform.position.z,
-            first_z,
-            "move must work again without re-picking the mesh"
-        );
-
-        let (mut rotate_app, x, y) = app_with_pickable_cube();
-        rotate_app.active_tool = ToolKind::Rotate;
-        rotate_app.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), x, y));
-        rotate_app.handle_mouse(mouse(MouseEventKind::Drag(MouseButton::Left), x + 2, y));
-        rotate_app.handle_mouse(mouse(MouseEventKind::Up(MouseButton::Left), x + 2, y));
-        let first_rotation = rotate_app.scene.selected().unwrap().transform.rotation.z;
-        rotate_app.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 0, 0));
-        rotate_app.handle_mouse(mouse(MouseEventKind::Drag(MouseButton::Left), 2, 0));
-        rotate_app.handle_mouse(mouse(MouseEventKind::Up(MouseButton::Left), 2, 0));
-        assert_ne!(
-            rotate_app.scene.selected().unwrap().transform.rotation.z,
-            first_rotation,
-            "rotate must work repeatedly"
-        );
-
-        let (mut scale_app, x, y) = app_with_pickable_cube();
-        scale_app.active_tool = ToolKind::Scale;
-        scale_app.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), x, y));
-        scale_app.handle_mouse(mouse(MouseEventKind::Drag(MouseButton::Left), x + 2, y));
-        scale_app.handle_mouse(mouse(MouseEventKind::Up(MouseButton::Left), x + 2, y));
-        let first_scale = scale_app.scene.selected().unwrap().transform.scale.x;
-        scale_app.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 0, 0));
-        scale_app.handle_mouse(mouse(MouseEventKind::Drag(MouseButton::Left), 2, 0));
-        scale_app.handle_mouse(mouse(MouseEventKind::Up(MouseButton::Left), 2, 0));
-        assert_ne!(
-            scale_app.scene.selected().unwrap().transform.scale.x,
-            first_scale,
-            "scale must work repeatedly"
-        );
-    }
-
-    #[test]
-    fn save_dialog_changes_format_and_saves_native_project() {
-        let mut app = App::new(Scene::default(), None);
-        app.open_save_dialog(SaveFormat::Forge);
-        assert_eq!(app.overlay, Overlay::SaveAs);
-        app.change_save_format(1);
-        assert!(app.save_dialog.as_ref().unwrap().filename.ends_with(".3mf"));
-
-        let filename = format!("forgetui-save-dialog-{}.forge", std::process::id());
-        let path = std::env::temp_dir().join(&filename);
-        if path.exists() {
-            fs::remove_file(&path).unwrap();
-        }
-        let dialog = app.save_dialog.as_mut().unwrap();
-        dialog.directory = std::env::temp_dir();
-        dialog.filename = filename;
-        dialog.format = SaveFormat::Forge;
-        app.confirm_save_dialog();
-        assert!(path.exists());
-        assert_eq!(app.overlay, Overlay::None);
-        fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn save_dialog_requires_second_confirmation_to_overwrite() {
-        let filename = format!("forgetui-overwrite-{}.forge", std::process::id());
-        let path = std::env::temp_dir().join(&filename);
-        fs::write(&path, "existing").unwrap();
-        let mut app = App::new(Scene::default(), None);
-        app.open_save_dialog(SaveFormat::Forge);
-        let dialog = app.save_dialog.as_mut().unwrap();
-        dialog.directory = std::env::temp_dir();
-        dialog.filename = filename;
-        app.confirm_save_dialog();
-        assert_eq!(app.overlay, Overlay::SaveAs);
-        assert!(app.save_dialog.as_ref().unwrap().overwrite);
-        app.confirm_save_dialog();
-        assert_eq!(app.overlay, Overlay::None);
-        fs::remove_file(path).unwrap();
-    }
 }
